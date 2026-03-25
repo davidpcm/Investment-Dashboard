@@ -625,6 +625,16 @@ def main():
             else:
                 action = "👀 WATCH"
 
+        # Fetch dividend info
+        div_info = fetch_dividend_info(ticker)
+        div_rate = div_info["trailingAnnualDividendRate"]
+        div_yield = div_info["dividendYield"]
+        div_yield_display = f"{div_yield * 100:.2f}%" if div_yield else "—"
+        div_per_share = f"${div_rate:,.4f}" if div_rate else "—"
+        annual_income = f"${shares * div_rate:,.2f}" if shares > 0 and div_rate else "—"
+        # Yield on cost: dividend relative to YOUR avg cost, not market price
+        yield_on_cost = f"{(div_rate / avg_cost * 100):.2f}%" if avg_cost > 0 and div_rate else "—"
+
         action_rows.append({
             "Ticker": ticker,
             "Name": name,
@@ -632,6 +642,10 @@ def main():
             "Avg Cost": avg_cost_display,
             "P&L %": pnl_pct_display,
             "P&L": pnl_display,
+            "Div Yield": div_yield_display,
+            "Div/Share": div_per_share,
+            "Yield on Cost": yield_on_cost,
+            "Annual Income": annual_income,
             "RSI": f"{latest.get('RSI_14', 0):.1f}",
             "Trend": signal["action"],
             "Pattern": pattern,
@@ -653,6 +667,10 @@ def main():
             "Avg Cost": st.column_config.TextColumn("Avg Cost", help="Your average purchase price per share (from sidebar)."),
             "P&L %": st.column_config.TextColumn("P&L %", help="Percentage gain/loss vs your avg cost. Green = profit, Red = loss."),
             "P&L": st.column_config.TextColumn("P&L", help="Dollar profit/loss = (Price − Avg Cost) × Shares."),
+            "Div Yield": st.column_config.TextColumn("Div Yield", help="Current dividend yield = Annual Dividend ÷ Market Price. Higher = more income per dollar at today's price."),
+            "Div/Share": st.column_config.TextColumn("Div/Share", help="Trailing annual dividend per share from Yahoo Finance."),
+            "Yield on Cost": st.column_config.TextColumn("Yield on Cost", help="Dividend yield based on YOUR average cost, not market price. Shows the real return on your invested capital. Higher than Div Yield = you bought at a good price."),
+            "Annual Income": st.column_config.TextColumn("Annual Income", help="Projected yearly dividend income = Shares × Dividend per Share. Only shown if you hold shares."),
             "RSI": st.column_config.TextColumn("RSI", help="Relative Strength Index (14). <30 = oversold (buy zone), >70 = overbought (sell zone)."),
             "Trend": st.column_config.TextColumn("Trend", help="Technical trend: 📈 BULLISH (uptrend), 📉 BEARISH (downtrend), ⚠️ OVERBOUGHT, 🟢 STRONG BUY."),
             "Pattern": st.column_config.TextColumn("Pattern", help="Candlestick patterns detected on the latest candle."),
