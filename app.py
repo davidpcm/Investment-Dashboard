@@ -16,24 +16,37 @@ import time
 # ──────────────────────────────────────────────
 # Watchlist Configuration
 # ──────────────────────────────────────────────
-WATCHLIST = {
-    "SGX (Income)": {
-        "D05.SI": "DBS Group",
-        "O39.SI": "OCBC Bank",
-        "U11.SI": "UOB",
-        "CJLU.SI": "NetLink NBN Trust",
-        "S68.SI": "SGX",
-        "V03.SI": "Venture Corp",
-        "U96.SI": "Sembcorp Industries",
-    },
-    "US (Momentum)": {
-        "AAPL": "Apple",
-        "TSLA": "Tesla",
-        "NVDA": "NVIDIA",
-        "MSFT": "Microsoft",
-        "AMD": "AMD",
-    },
+DEFAULT_TICKERS = {
+    "D05.SI": "DBS Group",
+    "O39.SI": "OCBC Bank",
+    "U11.SI": "UOB",
+    "CJLU.SI": "NetLink NBN Trust",
+    "S68.SI": "SGX",
+    "V03.SI": "Venture Corp",
+    "U96.SI": "Sembcorp Industries",
+    "AAPL": "Apple",
+    "TSLA": "Tesla",
+    "NVDA": "NVIDIA",
+    "MSFT": "Microsoft",
+    "AMD": "AMD",
 }
+
+
+@st.cache_data(ttl=86400)
+def resolve_ticker_name(ticker: str) -> str:
+    """Try to get the company name from yfinance, fallback to ticker."""
+    try:
+        info = yf.Ticker(ticker).info
+        return info.get("shortName") or info.get("longName") or ticker
+    except Exception:
+        return ticker
+
+
+def classify_ticker(ticker: str) -> str:
+    """Classify ticker as SGX Income or US/Other Momentum."""
+    if ticker.upper().endswith(".SI"):
+        return "SGX (Income)"
+    return "US/Other (Momentum)"
 
 LOOKBACK_DAYS = 200
 
@@ -333,15 +346,63 @@ def main():
         """
     )
 
-    # ── Sidebar: Portfolio Holdings ──
+    # ── Sidebar: Watchlist & Portfolio ──
+    st.sidebar.divider()
+    st.sidebar.header("📋 Watchlist")
+
+    # Initialize watchlist in session state with defaults
+    if "watchlist" not in st.session_state:
+        st.session_state.watchlist = dict(DEFAULT_TICKERS)
+
+    # Add custom ticker
+    with st.sidebar.expander("➕ Add a Ticker", expanded=False):
+        new_ticker = st.text_input(
+            "Ticker Symbol",
+            placeholder="e.g. GOOG, 9988.HK, BN4.SI",
+            help="Enter any valid Yahoo Finance ticker symbol. SGX tickers end with .SI",
+            key="new_ticker_input",
+        ).strip().upper()
+        if st.button("Add to Watchlist") and new_ticker:
+            if new_ticker in st.session_state.watchlist:
+                st.warning(f"{new_ticker} is already in your watchlist.")
+            else:
+                with st.spinner(f"Validating {new_ticker}..."):
+                    test_df = fetch_price_data(new_ticker, period_days=10)
+                if test_df is not None and not test_df.empty:
+                    name = resolve_ticker_name(new_ticker)
+                    st.session_state.watchlist[new_ticker] = name
+                    st.success(f"Added {name} ({new_ticker})")
+                    st.rerun()
+                else:
+                    st.error(f"Could not find data for '{new_ticker}'. Check the symbol.")
+
+    # Remove ticker
+    if len(st.session_state.watchlist) > 0:
+        with st.sidebar.expander("🗑️ Remove a Ticker", expanded=False):
+            to_remove = st.selectbox(
+                "Select ticker to remove",
+                options=list(st.session_state.watchlist.keys()),
+                format_func=lambda t: f"{st.session_state.watchlist[t]} ({t})",
+                key="remove_ticker_select",
+            )
+            if st.button("Remove from Watchlist"):
+                del st.session_state.watchlist[to_remove]
+                if to_remove in st.session_state.get("portfolio", {}):
+                    del st.session_state.portfolio[to_remove]
+                st.rerun()
+
+    # Show current watchlist count
+    st.sidebar.caption(f"Tracking {len(st.session_state.watchlist)} tickers")
+
+    # ── Portfolio Holdings ──
     st.sidebar.divider()
     st.sidebar.header("💼 My Portfolio")
 
-    # Build flat ticker list for multiselect
+    # Build ticker info from dynamic watchlist
     all_tickers = {}
-    for group, tickers in WATCHLIST.items():
-        for ticker, name in tickers.items():
-            all_tickers[ticker] = {"name": name, "group": group}
+    for ticker, name in st.session_state.watchlist.items():
+        group = classify_ticker(ticker)
+        all_tickers[ticker] = {"name": name, "group": group}
 
     # Initialize session state for portfolio
     if "portfolio" not in st.session_state:
@@ -354,6 +415,12 @@ def main():
         try:
             import json
             imported = json.load(uploaded)
+            # Also add any tickers from the import that aren't in watchlist
+            for t, data in imported.items():
+                if t not in st.session_state.watchlist:
+                    name = data.get("name") or resolve_ticker_name(t)
+                    st.session_state.watchlist[t] = name
+                    all_tickers[t] = {"name": name, "group": classify_ticker(t)}
             st.session_state.portfolio = imported
             st.sidebar.success(f"Loaded {len(imported)} holdings")
         except Exception as e:
@@ -365,7 +432,7 @@ def main():
     selected_tickers = st.sidebar.multiselect(
         "Select stocks you own",
         options=list(all_tickers.keys()),
-        default=list(st.session_state.portfolio.keys()),
+        default=[t for t in st.session_state.portfolio if t in all_tickers],
         format_func=lambda t: f"{all_tickers[t]['name']} ({t})",
         help="Pick the stocks in your portfolio. Then enter shares and cost below.",
     )
@@ -413,11 +480,10 @@ def main():
     # ── Fetch & Process Data ──
     with st.spinner("Fetching market data..."):
         all_data: dict[str, pd.DataFrame] = {}
-        for group, tickers in WATCHLIST.items():
-            for ticker in tickers:
-                df = fetch_price_data(ticker)
-                if df is not None and len(df) > 20:
-                    all_data[ticker] = compute_indicators(df)
+        for ticker in st.session_state.watchlist:
+            df = fetch_price_data(ticker)
+            if df is not None and len(df) > 20:
+                all_data[ticker] = compute_indicators(df)
 
     if not all_data:
         st.error("Could not fetch data for any ticker. Check your internet connection.")
@@ -580,9 +646,15 @@ def main():
 
     # ── Charts ──
     st.header("📈 Technical Charts")
-    for group, tickers in WATCHLIST.items():
+    # Group tickers by classification
+    grouped: dict[str, list] = {}
+    for ticker, name in st.session_state.watchlist.items():
+        group = classify_ticker(ticker)
+        grouped.setdefault(group, []).append((ticker, name))
+
+    for group, ticker_list in grouped.items():
         st.subheader(group)
-        for ticker, name in tickers.items():
+        for ticker, name in ticker_list:
             if ticker in all_data:
                 fig = build_candlestick_chart(all_data[ticker], ticker, name)
                 st.plotly_chart(fig, use_container_width=True)
