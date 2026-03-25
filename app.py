@@ -334,17 +334,81 @@ def main():
     )
 
     # ── Sidebar: Portfolio Holdings ──
-    st.sidebar.header("💼 Portfolio Holdings")
-    st.sidebar.markdown("Enter your shares owned and average cost per ticker.")
+    st.sidebar.divider()
+    st.sidebar.header("💼 My Portfolio")
 
-    holdings: dict[str, dict] = {}
+    # Build flat ticker list for multiselect
+    all_tickers = {}
     for group, tickers in WATCHLIST.items():
-        st.sidebar.subheader(group)
         for ticker, name in tickers.items():
-            with st.sidebar.expander(f"{name} ({ticker})", expanded=False):
-                shares = st.number_input(f"Shares Owned", min_value=0, value=0, step=1, key=f"shares_{ticker}")
-                avg_cost = st.number_input(f"Avg Cost ($)", min_value=0.0, value=0.0, step=0.01, key=f"cost_{ticker}", format="%.4f")
-                holdings[ticker] = {"shares": shares, "avg_cost": avg_cost, "name": name, "group": group}
+            all_tickers[ticker] = {"name": name, "group": group}
+
+    # Initialize session state for portfolio
+    if "portfolio" not in st.session_state:
+        st.session_state.portfolio = {}
+
+    # Import portfolio from JSON
+    st.sidebar.markdown("**Load / Save Portfolio**")
+    uploaded = st.sidebar.file_uploader("📂 Import portfolio JSON", type=["json"], key="import_portfolio")
+    if uploaded is not None:
+        try:
+            import json
+            imported = json.load(uploaded)
+            st.session_state.portfolio = imported
+            st.sidebar.success(f"Loaded {len(imported)} holdings")
+        except Exception as e:
+            st.sidebar.error(f"Invalid JSON: {e}")
+
+    st.sidebar.divider()
+
+    # Select which stocks you hold
+    selected_tickers = st.sidebar.multiselect(
+        "Select stocks you own",
+        options=list(all_tickers.keys()),
+        default=list(st.session_state.portfolio.keys()),
+        format_func=lambda t: f"{all_tickers[t]['name']} ({t})",
+        help="Pick the stocks in your portfolio. Then enter shares and cost below.",
+    )
+
+    # Input shares & avg cost for each selected ticker
+    holdings: dict[str, dict] = {}
+    for ticker in selected_tickers:
+        info = all_tickers[ticker]
+        saved = st.session_state.portfolio.get(ticker, {})
+        with st.sidebar.expander(f"✏️ {info['name']} ({ticker})", expanded=True):
+            shares = st.number_input(
+                "Shares Owned", min_value=0, value=int(saved.get("shares", 0)),
+                step=1, key=f"shares_{ticker}",
+            )
+            avg_cost = st.number_input(
+                "Avg Cost ($)", min_value=0.0, value=float(saved.get("avg_cost", 0)),
+                step=0.01, key=f"cost_{ticker}", format="%.4f",
+            )
+            holdings[ticker] = {"shares": shares, "avg_cost": avg_cost, "name": info["name"], "group": info["group"]}
+            # Keep session state in sync
+            st.session_state.portfolio[ticker] = {"shares": shares, "avg_cost": avg_cost}
+
+    # Also include non-selected tickers with 0 shares for the action table
+    for ticker, info in all_tickers.items():
+        if ticker not in holdings:
+            holdings[ticker] = {"shares": 0, "avg_cost": 0, "name": info["name"], "group": info["group"]}
+
+    # Clean up removed tickers from session state
+    for t in list(st.session_state.portfolio.keys()):
+        if t not in selected_tickers:
+            del st.session_state.portfolio[t]
+
+    # Export portfolio as JSON download
+    if st.session_state.portfolio:
+        import json
+        portfolio_json = json.dumps(st.session_state.portfolio, indent=2)
+        st.sidebar.download_button(
+            "💾 Export Portfolio JSON",
+            data=portfolio_json,
+            file_name="my_portfolio.json",
+            mime="application/json",
+            help="Download your portfolio as a JSON file. Import it next time to restore your holdings.",
+        )
 
     # ── Fetch & Process Data ──
     with st.spinner("Fetching market data..."):
@@ -395,7 +459,7 @@ def main():
     for ticker, df in all_data.items():
         latest = df.iloc[-1]
         prev_3_lows = float(df["Low"].iloc[-4:-1].min()) if len(df) >= 4 else float(latest["Low"])
-        signal = generate_signal(latest, prev_3_lows, holds_shares=shares > 0)
+        signal = generate_signal(latest, prev_3_lows, holds_shares=holdings.get(ticker, {}).get("shares", 0) > 0)
         pattern = get_detected_patterns(latest)
         h = holdings.get(ticker, {})
         name = h.get("name", ticker)
