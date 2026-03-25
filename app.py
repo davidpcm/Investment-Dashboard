@@ -564,23 +564,63 @@ def main():
             target = None
             rr = "—"
 
-        # Margin of safety: how far current price is from suggested entry
-        margin = ((current_price - suggested_entry) / suggested_entry * 100) if suggested_entry > 0 else 0
+        # Generate action recommendation based on cost basis + trend
+        if shares > 0 and avg_cost > 0:
+            pnl_pct = ((current_price - avg_cost) / avg_cost) * 100
+            pnl_display = f"${pnl:,.2f}"
+            pnl_pct_display = f"{pnl_pct:+.1f}%"
+            avg_cost_display = f"${avg_cost:,.4f}"
+
+            # Decision logic combining P&L with technical signals
+            if signal["action"] in ("🔴 TAKE PROFIT",) and pnl_pct > 10:
+                action = "💰 SELL — Take Profit"
+            elif signal["action"] == "🔴 TAKE PROFIT" and pnl_pct > 0:
+                action = "🟡 SELL — Lock Gains"
+            elif signal["action"] == "🔴 TAKE PROFIT" and pnl_pct <= 0:
+                action = "⏳ HOLD — Wait for Recovery"
+            elif "BULLISH" in signal["action"] and pnl_pct < -5:
+                action = "🟢 BUY MORE — Avg Down"
+            elif "STRONG BUY" in signal["action"]:
+                action = "🟢 BUY MORE"
+            elif "BEARISH" in signal["action"] and pnl_pct < -15:
+                action = "🔴 CUT LOSS"
+            elif "BEARISH" in signal["action"] and pnl_pct > 15:
+                action = "🟡 REDUCE — Protect Gains"
+            elif pnl_pct > 20 and float(latest.get("RSI_14", 50)) > 65:
+                action = "🟡 TRIM — RSI High + Good Profit"
+            else:
+                action = "⏳ HOLD"
+        else:
+            pnl_pct = 0
+            pnl_display = "—"
+            pnl_pct_display = "—"
+            avg_cost_display = "—"
+            # No position — should I buy?
+            if "STRONG BUY" in signal["action"]:
+                action = "🟢 OPEN POSITION"
+            elif "BULLISH" in signal["action"]:
+                action = "👀 WATCHLIST — Wait for Entry"
+            elif "OVERBOUGHT" in signal["action"]:
+                action = "🚫 DON'T BUY — Overbought"
+            elif "BEARISH" in signal["action"]:
+                action = "⏳ WAIT — Trend Down"
+            else:
+                action = "👀 WATCH"
 
         action_rows.append({
             "Ticker": ticker,
             "Name": name,
             "Price": f"${current_price:,.4f}",
+            "Avg Cost": avg_cost_display,
+            "P&L %": pnl_pct_display,
+            "P&L": pnl_display,
             "RSI": f"{latest.get('RSI_14', 0):.1f}",
             "Trend": signal["action"],
             "Pattern": pattern,
-            "Entry Type": entry_label,
-            "Ideal Entry": f"${suggested_entry:,.4f}",
-            "vs Entry": f"{margin:+.1f}%" if margin != 0 else "AT ENTRY",
+            "Action": action,
             "Stop Loss": f"${stop:,.4f}",
             "Target (2:1)": f"${target:,.4f}" if target else "—",
             "Shares": shares,
-            "P&L": f"${pnl:,.2f}" if shares > 0 else "—",
         })
 
     action_df = pd.DataFrame(action_rows)
@@ -589,58 +629,19 @@ def main():
         use_container_width=True,
         hide_index=True,
         column_config={
-            "Ticker": st.column_config.TextColumn(
-                "Ticker",
-                help="Stock ticker symbol (e.g. D05.SI for DBS on SGX, AAPL for Apple on NASDAQ).",
-            ),
-            "Name": st.column_config.TextColumn(
-                "Name",
-                help="Company name associated with the ticker.",
-            ),
-            "Price": st.column_config.TextColumn(
-                "Price",
-                help="Latest closing price from Yahoo Finance.",
-            ),
-            "RSI": st.column_config.TextColumn(
-                "RSI",
-                help="Relative Strength Index (14-period). Below 30 = oversold (potential buy), above 70 = overbought (potential sell). Range: 0–100.",
-            ),
-            "Trend": st.column_config.TextColumn(
-                "Trend",
-                help="Signal based on Alpha logic: 🟢 STRONG BUY (all buy conditions met), 🔴 TAKE PROFIT (exit signal, only if you hold shares), ⚠️ OVERBOUGHT (RSI>75 or bearish pattern, but you don't hold shares — avoid buying), 📈 BULLISH (9-EMA > 20-EMA), 📉 BEARISH (9-EMA < 20-EMA).",
-            ),
-            "Pattern": st.column_config.TextColumn(
-                "Pattern",
-                help="Detected candlestick patterns: Bullish Engulfing & Hammer are buy signals; Bearish Engulfing & Shooting Star are sell signals.",
-            ),
-            "Entry Type": st.column_config.TextColumn(
-                "Entry Type",
-                help="Value Entry (SGX Income): buy at 20-EMA support for dividend stocks. Pullback Entry (US Momentum): buy at 20-EMA dip in uptrend. Caution Entry: tighter entry at 9-EMA when trend is weak.",
-            ),
-            "Ideal Entry": st.column_config.TextColumn(
-                "Ideal Entry",
-                help="Suggested price to enter the position. For income stocks: 20-EMA or current price (whichever is lower). For momentum: 20-EMA pullback level.",
-            ),
-            "vs Entry": st.column_config.TextColumn(
-                "vs Entry",
-                help="How far the current price is from the ideal entry. Positive % = price is above entry (wait for pullback). Negative % or 'AT ENTRY' = at or below the buy zone.",
-            ),
-            "Stop Loss": st.column_config.TextColumn(
-                "Stop Loss",
-                help="Suggested exit price to limit losses. Calculated as the lowest low of the previous 3 trading days. If price drops below this, consider selling.",
-            ),
-            "Target (2:1)": st.column_config.TextColumn(
-                "Target (2:1)",
-                help="Take-profit price based on 2:1 risk/reward. Target = Entry + 2×(Entry − Stop Loss). You risk $1 to potentially gain $2.",
-            ),
-            "Shares": st.column_config.NumberColumn(
-                "Shares",
-                help="Number of shares you own (entered in the sidebar).",
-            ),
-            "P&L": st.column_config.TextColumn(
-                "P&L",
-                help="Unrealized profit/loss = (Current Price − Avg Cost) × Shares Owned. Only shown if you've entered holdings in the sidebar.",
-            ),
+            "Ticker": st.column_config.TextColumn("Ticker", help="Stock ticker symbol."),
+            "Name": st.column_config.TextColumn("Name", help="Company name."),
+            "Price": st.column_config.TextColumn("Price", help="Latest market price from Yahoo Finance."),
+            "Avg Cost": st.column_config.TextColumn("Avg Cost", help="Your average purchase price per share (from sidebar)."),
+            "P&L %": st.column_config.TextColumn("P&L %", help="Percentage gain/loss vs your avg cost. Green = profit, Red = loss."),
+            "P&L": st.column_config.TextColumn("P&L", help="Dollar profit/loss = (Price − Avg Cost) × Shares."),
+            "RSI": st.column_config.TextColumn("RSI", help="Relative Strength Index (14). <30 = oversold (buy zone), >70 = overbought (sell zone)."),
+            "Trend": st.column_config.TextColumn("Trend", help="Technical trend: 📈 BULLISH (uptrend), 📉 BEARISH (downtrend), ⚠️ OVERBOUGHT, 🟢 STRONG BUY."),
+            "Pattern": st.column_config.TextColumn("Pattern", help="Candlestick patterns detected on the latest candle."),
+            "Action": st.column_config.TextColumn("Action", help="Recommended action combining your cost basis with market trend. 💰 SELL = take profit, 🟢 BUY MORE = avg down or add, 🔴 CUT LOSS = stop loss hit, ⏳ HOLD = wait."),
+            "Stop Loss": st.column_config.TextColumn("Stop Loss", help="Suggested stop loss = lowest low of previous 3 days. Sell if price drops below this."),
+            "Target (2:1)": st.column_config.TextColumn("Target (2:1)", help="Take-profit target at 2:1 risk/reward ratio."),
+            "Shares": st.column_config.NumberColumn("Shares", help="Number of shares you own."),
         },
     )
 
