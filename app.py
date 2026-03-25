@@ -152,7 +152,7 @@ def detect_candlestick_patterns(df: pd.DataFrame) -> pd.DataFrame:
 # ──────────────────────────────────────────────
 # Alpha Signal Logic
 # ──────────────────────────────────────────────
-def generate_signal(row: pd.Series, prev_3_lows: float) -> dict:
+def generate_signal(row: pd.Series, prev_3_lows: float, holds_shares: bool = False) -> dict:
     """
     BUY: Price > 20-EMA AND 9-EMA > 20-EMA AND RSI < 65 AND (Bullish Engulfing OR Hammer)
     EXIT: RSI > 75 OR (Bearish Engulfing OR Shooting Star)
@@ -180,7 +180,10 @@ def generate_signal(row: pd.Series, prev_3_lows: float) -> dict:
 
     # EXIT conditions checked first
     if rsi > 75 or bearish or shooting:
-        signal["action"] = "🔴 TAKE PROFIT"
+        if holds_shares:
+            signal["action"] = "🔴 TAKE PROFIT"
+        else:
+            signal["action"] = "⚠️ OVERBOUGHT"
         signal["color"] = "red"
         return signal
 
@@ -392,7 +395,7 @@ def main():
     for ticker, df in all_data.items():
         latest = df.iloc[-1]
         prev_3_lows = float(df["Low"].iloc[-4:-1].min()) if len(df) >= 4 else float(latest["Low"])
-        signal = generate_signal(latest, prev_3_lows)
+        signal = generate_signal(latest, prev_3_lows, holds_shares=shares > 0)
         pattern = get_detected_patterns(latest)
         h = holdings.get(ticker, {})
         name = h.get("name", ticker)
@@ -474,7 +477,7 @@ def main():
             ),
             "Trend": st.column_config.TextColumn(
                 "Trend",
-                help="Signal based on Alpha logic: 🟢 STRONG BUY (all buy conditions met), 🔴 TAKE PROFIT (exit conditions met), 📈 BULLISH (9-EMA > 20-EMA), 📉 BEARISH (9-EMA < 20-EMA).",
+                help="Signal based on Alpha logic: 🟢 STRONG BUY (all buy conditions met), 🔴 TAKE PROFIT (exit signal, only if you hold shares), ⚠️ OVERBOUGHT (RSI>75 or bearish pattern, but you don't hold shares — avoid buying), 📈 BULLISH (9-EMA > 20-EMA), 📉 BEARISH (9-EMA < 20-EMA).",
             ),
             "Pattern": st.column_config.TextColumn(
                 "Pattern",
