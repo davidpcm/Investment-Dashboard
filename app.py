@@ -521,6 +521,38 @@ def main():
 
     # ── Daily Action Table ──
     st.header("📋 Daily Action Table")
+
+    with st.expander("ℹ️ Action Legend — What does each recommendation mean?", expanded=False):
+        st.markdown("""
+**When you HOLD a position:**
+| Action | Meaning |
+|--------|---------|
+| 💰 SELL — Take Profit | Overbought signal (RSI>75 or bearish pattern) AND you're up >10%. Strong sell signal. |
+| 🟡 SELL — Lock Gains | Overbought signal AND you're in profit (<10%). Consider selling to protect gains. |
+| 🟡 REDUCE — Protect Gains | Trend turned bearish BUT you're up >15%. Sell part of your position (30-50%) to lock in profit, keep the rest. |
+| 🟡 TRIM — RSI High + Good Profit | RSI is elevated (>65) AND you're up >20%. Sell a small portion (20-30%) before a potential pullback. Preventive, not urgent. |
+| 🟢 BUY MORE — Avg Down | Trend is bullish BUT you're down >5%. Good opportunity to lower your average cost. |
+| 🟢 BUY MORE | Strong buy signal detected while you hold. Add to your position. |
+| 🔴 CUT LOSS | Trend is bearish AND you're down >15%. Consider exiting to limit further losses. |
+| ⏳ HOLD — Wait for Recovery | Overbought signal but you're still at a loss. Don't sell at a loss on a temporary spike. |
+| ⏳ HOLD | No strong signal either way. Stay patient. |
+
+**When you DON'T hold a position:**
+| Action | Meaning |
+|--------|---------|
+| 🟢 OPEN POSITION | Strong buy signal — all conditions met. Good time to enter. |
+| 👀 WATCHLIST — Wait for Entry | Trend is bullish but no strong buy trigger yet. Keep watching for a pullback entry. |
+| 🚫 DON'T BUY — Overbought | RSI>75 or bearish pattern. Stock is overheated — wait for it to cool down. |
+| ⏳ WAIT — Trend Down | Bearish trend. Don't catch a falling knife. |
+| 👀 WATCH | Neutral. No clear signal. |
+
+**Key Indicators:**
+- **RSI**: <30 = oversold (buy zone), >70 = overbought (sell zone)
+- **Trend**: Based on 9-EMA vs 20-EMA crossover
+- **Pattern**: Candlestick patterns (Engulfing, Hammer, Shooting Star)
+- **Stop Loss**: Lowest low of previous 3 trading days
+- **Target (2:1)**: Take-profit at 2× the risk from entry to stop loss
+        """)
     action_rows = []
     for ticker, df in all_data.items():
         latest = df.iloc[-1]
@@ -638,7 +670,7 @@ def main():
             "RSI": st.column_config.TextColumn("RSI", help="Relative Strength Index (14). <30 = oversold (buy zone), >70 = overbought (sell zone)."),
             "Trend": st.column_config.TextColumn("Trend", help="Technical trend: 📈 BULLISH (uptrend), 📉 BEARISH (downtrend), ⚠️ OVERBOUGHT, 🟢 STRONG BUY."),
             "Pattern": st.column_config.TextColumn("Pattern", help="Candlestick patterns detected on the latest candle."),
-            "Action": st.column_config.TextColumn("Action", help="Recommended action combining your cost basis with market trend. 💰 SELL = take profit, 🟢 BUY MORE = avg down or add, 🔴 CUT LOSS = stop loss hit, ⏳ HOLD = wait."),
+            "Action": st.column_config.TextColumn("Action", help="Smart recommendation based on your cost basis + market trend. Click 'ℹ️ Action Legend' above the table for full details on each action type."),
             "Stop Loss": st.column_config.TextColumn("Stop Loss", help="Suggested stop loss = lowest low of previous 3 days. Sell if price drops below this."),
             "Target (2:1)": st.column_config.TextColumn("Target (2:1)", help="Take-profit target at 2:1 risk/reward ratio."),
             "Shares": st.column_config.NumberColumn("Shares", help="Number of shares you own."),
