@@ -331,20 +331,6 @@ def main():
         st.cache_data.clear()
         st.rerun()
 
-    # ── Data Freshness Note ──
-    st.sidebar.divider()
-    st.sidebar.markdown(
-        """
-        📡 **Data Source & Freshness**
-        - Price data: [Yahoo Finance](https://finance.yahoo.com) via `yfinance`
-        - **US stocks**: ~15–20 min delay during NYSE/NASDAQ hours (9:30 AM–4 PM ET)
-        - **SGX stocks**: ~15–20 min delay during SGX hours (9 AM–5 PM SGT)
-        - Dividend data: Trailing 12-month from Yahoo Finance, refreshed every 30 min
-        - Price cache: **5 minutes** (auto-cleared on refresh)
-        - After market close, data reflects the final closing prices
-        - ⚠️ *Not suitable for intraday scalping — use a broker terminal for live ticks*
-        """
-    )
 
     # ── Sidebar: Watchlist & Portfolio ──
     st.sidebar.divider()
@@ -739,6 +725,22 @@ def main():
         )
     else:
         st.info("Enter your shares owned in the sidebar to see detailed holdings.")
+
+    with st.expander("📡 Data Source & Freshness", expanded=False):
+        st.markdown("""
+| Item | Detail |
+|------|--------|
+| **Price Data** | [Yahoo Finance](https://finance.yahoo.com) via `yfinance` library |
+| **US Stocks** | ~15–20 min delay during NYSE/NASDAQ hours (9:30 AM–4 PM ET) |
+| **SGX Stocks** | ~15–20 min delay during SGX hours (9 AM–5 PM SGT) |
+| **Dividend Data** | Trailing 12-month annual dividend from Yahoo Finance, cached 30 min |
+| **Price Cache** | 5 minutes — auto-cleared on refresh or when auto-refresh triggers |
+| **After Market Close** | Data reflects the final closing prices for the day |
+| **Technical Indicators** | EMA (9, 20), SMA (200), RSI (14), VWAP — all calculated with pure pandas |
+| **Candlestick Patterns** | Bullish/Bearish Engulfing, Hammer, Shooting Star — detected on daily candles |
+| **Limitations** | Not real-time tick data. Not suitable for intraday scalping — use a broker terminal for live ticks |
+| **Disclaimer** | This dashboard is for informational purposes only. Not financial advice. Always do your own research. |
+        """)
 
     st.caption(f"Last refreshed: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} · Data from Yahoo Finance (15–20 min delay) · Not financial advice.")
 
