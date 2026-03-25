@@ -7,7 +7,6 @@ Dual-Purpose Investment Portfolio Dashboard
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import pandas_ta as ta
 import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -82,16 +81,21 @@ def fetch_dividend_info(ticker: str) -> dict:
 def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
     """Calculate EMAs, SMA, RSI, VWAP, and candlestick patterns."""
     df = df.copy()
+    close = df["Close"]
 
-    # Trend indicators
-    df["EMA_9"] = ta.ema(df["Close"], length=9)
-    df["EMA_20"] = ta.ema(df["Close"], length=20)
-    df["SMA_200"] = ta.sma(df["Close"], length=200)
+    # Trend indicators (pure pandas)
+    df["EMA_9"] = close.ewm(span=9, adjust=False).mean()
+    df["EMA_20"] = close.ewm(span=20, adjust=False).mean()
+    df["SMA_200"] = close.rolling(window=200).mean()
 
-    # Momentum
-    df["RSI_14"] = ta.rsi(df["Close"], length=14)
+    # RSI (14-period)
+    delta = close.diff()
+    gain = delta.where(delta > 0, 0.0).rolling(window=14).mean()
+    loss = (-delta.where(delta < 0, 0.0)).rolling(window=14).mean()
+    rs = gain / loss.replace(0, np.nan)
+    df["RSI_14"] = 100 - (100 / (1 + rs))
 
-    # VWAP (daily reset — approximate using cumulative intraday proxy on daily bars)
+    # VWAP (cumulative approximation on daily bars)
     typical_price = (df["High"] + df["Low"] + df["Close"]) / 3
     df["VWAP"] = (typical_price * df["Volume"]).cumsum() / df["Volume"].cumsum()
 
